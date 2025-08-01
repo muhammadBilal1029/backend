@@ -55,7 +55,7 @@ router.post("/vendor-register", async (req, res) => {
     currency,
     logo,
     website,
-    businessContact,
+    phoneNumber,
     country,
     state,
     city,
@@ -94,7 +94,7 @@ router.post("/vendor-register", async (req, res) => {
       currency,
       logo,
       website,
-      businessContact,
+      phoneNumber,
       country,
       state,
       city,
@@ -108,6 +108,7 @@ router.post("/vendor-register", async (req, res) => {
       youtubeLink,
       twitterLink,
       password: hashedPassword,
+      confirmPassword: hashedPassword, // Store hashed password for confirmPassword
       acceptTerms,
     });
 
