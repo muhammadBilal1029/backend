@@ -46,15 +46,11 @@ const path = require("path");
 //   throw new Error("No supported browser found on this system.");
 // }
 
-async function searchGoogleMaps(project, io) {
+async function searchGoogleMaps(project) {
   try {
     const start = Date.now();
-
     puppeteerExtra.use(stealthPlugin());
 
-    // const browserPath = getLocalBrowserPath();
-
-    // Launch Puppeteer with fallback for hosted environments
     const browser = await puppeteerExtra.launch({
       headless: false,
       args: [
@@ -66,14 +62,15 @@ async function searchGoogleMaps(project, io) {
     });
 
     const page = await browser.newPage();
-
     const { city, businessCategory } = project;
     const query = `${businessCategory} ${city}`;
+
     console.log(
       `Navigating: https://www.google.com/maps/search/${query
         .split(" ")
         .join("+")}`
     );
+
     try {
       await page.goto(
         `https://www.google.com/maps/search/${query.split(" ").join("+")}`
@@ -82,56 +79,46 @@ async function searchGoogleMaps(project, io) {
       console.log("Error navigating to the page");
     }
 
-    async function autoScroll(page) {
-      await page.evaluate(async () => {
-        const wrapper = document.querySelector('div[role="feed"]');
-        await new Promise((resolve) => {
-          var totalHeight = 0;
-          var distance = 1000;
-          var scrollDelay = 8000;
-          var timer = setInterval(async () => {
-            var scrollHeightBefore = wrapper.scrollHeight;
-            wrapper.scrollBy(0, distance);
-            totalHeight += distance;
+    // Auto-scroll logic
+    await page.evaluate(async () => {
+      const wrapper = document.querySelector('div[role="feed"]');
+      await new Promise((resolve) => {
+        var totalHeight = 0;
+        var distance = 1000;
+        var scrollDelay = 8000;
+        var timer = setInterval(async () => {
+          var scrollHeightBefore = wrapper.scrollHeight;
+          wrapper.scrollBy(0, distance);
+          totalHeight += distance;
 
-            if (totalHeight >= scrollHeightBefore) {
-              totalHeight = 0;
-              await new Promise((resolve) => setTimeout(resolve, scrollDelay));
+          if (totalHeight >= scrollHeightBefore) {
+            totalHeight = 0;
+            await new Promise((resolve) => setTimeout(resolve, scrollDelay));
 
-              var scrollHeightAfter = wrapper.scrollHeight;
-              if (scrollHeightAfter > scrollHeightBefore) {
-                return;
-              } else {
-                clearInterval(timer);
-                resolve();
-              }
-            }
-          }, 200);
-        });
+            var scrollHeightAfter = wrapper.scrollHeight;
+            if (scrollHeightAfter > scrollHeightBefore) return;
+            clearInterval(timer);
+            resolve();
+          }
+        }, 200);
       });
-    }
-
-    await autoScroll(page);
+    });
 
     const html = await page.content();
-    const pages = await browser.pages();
-    await Promise.all(pages.map((page) => page.close()));
-
+    await Promise.all((await browser.pages()).map((p) => p.close()));
     await browser.close();
     console.log("Browser closed");
 
     const $ = cheerio.load(html);
-    const aTags = $("a");
     const parents = [];
-    aTags.each((i, el) => {
+    $("a").each((i, el) => {
       const href = $(el).attr("href");
-      if (!href) return;
-      if (href.includes("/maps/place/")) {
+      if (href && href.includes("/maps/place/")) {
         parents.push($(el).parent());
       }
     });
 
-    console.log("Number of parents:", parents.length);
+    console.log("Number of businesses found:", parents.length);
 
     const businesses = [];
     const { vendorId } = project;
@@ -174,88 +161,71 @@ async function searchGoogleMaps(project, io) {
             ?.trim();
           return reviewsText && !isNaN(Number(reviewsText))
             ? Number(reviewsText)
-            : 0; // Prevent NaN errors
+            : 0;
         })(),
       });
     });
 
-    const end = Date.now();
-    console.log(`Time taken: ${Math.floor((end - start) / 1000)} seconds`);
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    async function delay(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    async function processBusinesses(businesses) {
+    const processBusinesses = async (businesses) => {
       const concurrencyLimit = 3;
       const batchResults = [];
 
-      try {
-        for (let i = 0; i < businesses.length; i += concurrencyLimit) {
-          const batch = businesses.slice(i, i + concurrencyLimit);
-
-          const results = await Promise.all(
-            batch.map(async (data) => {
-              if (data.bizWebsite) {
-                const websiteDetails = await scrapeData(data.bizWebsite);
-                return {
-                  ...data,
-                  websiteDetails: {
-                    about: websiteDetails.about || "",
-                    logoUrl: websiteDetails.logoUrl || "",
-                    email: websiteDetails.email || "",
-                    socialLinks: {
-                      youtube: websiteDetails.socialLinks?.youtube || "",
-                      instagram: websiteDetails.socialLinks?.instagram || "",
-                      facebook: websiteDetails.socialLinks?.facebook || "",
-                      linkedin: websiteDetails.socialLinks?.linkedin || "",
-                    },
-                    images: websiteDetails.images || [],
+      for (let i = 0; i < businesses.length; i += concurrencyLimit) {
+        const batch = businesses.slice(i, i + concurrencyLimit);
+        const results = await Promise.all(
+          batch.map(async (data) => {
+            if (data.bizWebsite) {
+              const websiteDetails = await scrapeData(data.bizWebsite);
+              return {
+                ...data,
+                websiteDetails: {
+                  about: websiteDetails.about || "",
+                  logoUrl: websiteDetails.logoUrl || "",
+                  email: websiteDetails.email || "",
+                  socialLinks: {
+                    youtube: websiteDetails.socialLinks?.youtube || "",
+                    instagram: websiteDetails.socialLinks?.instagram || "",
+                    facebook: websiteDetails.socialLinks?.facebook || "",
+                    linkedin: websiteDetails.socialLinks?.linkedin || "",
                   },
-                };
-              }
-              return data;
-            })
-          );
-          io.emit("batchUpdate", results);
-          batchResults.push(...results);
-          await delay(5000); // 5-second delay between batches
-        }
-
-        // Prepare data for database insertion
-        const leadsToSave = batchResults.map((business) => ({
-          ...business,
-          about: business.websiteDetails?.about || "",
-          logoUrl: business.websiteDetails?.logoUrl || "",
-          email: business.websiteDetails?.email || "",
-          socialLinks: {
-            youtube: business.websiteDetails?.socialLinks?.youtube || "",
-            instagram: business.websiteDetails?.socialLinks?.instagram || "",
-            facebook: business.websiteDetails?.socialLinks?.facebook || "",
-            linkedin: business.websiteDetails?.socialLinks?.linkedin || "",
-          },
-          images: business.websiteDetails?.images || [],
-        }));
-
-        // Save the data into MongoDB
-        await Lead.insertMany(leadsToSave);
-        io.emit("scrapingComplete", { message: "Data added successfully" });
-
-        return batchResults;
-      } catch (error) {
-        console.error("Error in processBusinesses:", error.message);
-        io.emit("scrapingError", { message: error.message });
-        throw error; // Ensure error propagation for debugging
+                  images: websiteDetails.images || [],
+                },
+              };
+            }
+            return data;
+          })
+        );
+        batchResults.push(...results);
+        await delay(5000);
       }
-    }
 
-    // Process the businesses
+      const leadsToSave = batchResults.map((business) => ({
+        ...business,
+        about: business.websiteDetails?.about || "",
+        logoUrl: business.websiteDetails?.logoUrl || "",
+        email: business.websiteDetails?.email || "",
+        socialLinks: {
+          youtube: business.websiteDetails?.socialLinks?.youtube || "",
+          instagram: business.websiteDetails?.socialLinks?.instagram || "",
+          facebook: business.websiteDetails?.socialLinks?.facebook || "",
+          linkedin: business.websiteDetails?.socialLinks?.linkedin || "",
+        },
+        images: business.websiteDetails?.images || [],
+      }));
+
+      await Lead.insertMany(leadsToSave);
+      return batchResults;
+    };
+
     const result = await processBusinesses(businesses);
-    console.log("result", result.splice(0, 10));
+    console.log("Processed sample:", result.slice(0, 10));
+    console.log(`Time taken: ${Math.floor((Date.now() - start) / 1000)} seconds`);
     return result;
   } catch (error) {
     console.error("Error in searchGoogleMaps:", error.message);
+    throw error;
   }
 }
-
 module.exports = { searchGoogleMaps };

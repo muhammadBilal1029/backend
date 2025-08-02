@@ -8,23 +8,16 @@ const userRouter = require("./routes/admin/users/users");
 const LeadRouter = require("./routes/Leads");
 const connectDB = require("./config/db");
 const { initQueue } = require("./services/queueService");
-const http = require("http");
-const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:5174", // Adjust according to your client URL
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
 
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
-app.use(cors());
+app.use(cors({
+  origin: "*", // or your deployed frontend URL
+  methods: ["GET", "POST", "PUT", "DELETE"],
+}));
 
 // Routes
 app.use("/api/projects", projectRoutes);
@@ -41,7 +34,7 @@ connectDB()
     console.log("MongoDB connected successfully");
 
     // Wait for queue initialization to complete before continuing
-    return initQueue(io, require("mongoose")); // Pass mongoose to the initQueue
+    return initQueue(require("mongoose")); // Pass mongoose to the initQueue
   })
   .catch((error) => {
     console.error("Error initializing server:", error.message);
@@ -50,12 +43,4 @@ connectDB()
 
 // Start server once MongoDB and queue are ready
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// Handle socket connection
-io.on("connection", (socket) => {
-  console.log("A user connected");
-  socket.on("disconnect", () => {
-    console.log("A user disconnected");
-  });
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

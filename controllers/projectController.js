@@ -39,3 +39,81 @@ exports.deleteProject = async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 };
+
+
+/**
+ * POST /api/project/start-scrape
+ * Body: { projectId }
+ */
+exports.startScraping = async (req, res) => {
+  const { projectId } = req.body;
+
+  if (!projectId) {
+    return res.status(400).json({ error: "projectId is required" });
+  }
+
+  try {
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    if (project.status === "Cancelled") {
+      return res.status(400).json({ error: "Project has already been cancelled" });
+    }
+
+    // Set project status to "Running"
+    await Project.findByIdAndUpdate(projectId, { status: "Running" });
+
+    // Begin scraping
+    const data = await searchGoogleMaps(project);
+
+    if (!data || data.length === 0) {
+      await Project.findByIdAndUpdate(projectId, { status: "Finished" });
+      return res.json({ status: "Finished", message: "No data found" });
+    }
+
+    // Check if cancelled during scraping
+    const updatedProject = await Project.findById(projectId);
+    if (updatedProject.status === "Cancelled") {
+      return res.json({ status: "Cancelled", message: "Project cancelled during scraping" });
+    }
+
+    await Project.findByIdAndUpdate(projectId, { status: "Finished" });
+
+    return res.json({ status: "Finished", message: "Scraping completed successfully" });
+  } catch (err) {
+    console.error("Scraping failed:", err);
+    await Project.findByIdAndUpdate(projectId, { status: "Failed" });
+    return res.status(500).json({ error: "Scraping failed", details: err.message });
+  }
+};
+
+/**
+ * POST /api/project/cancel-task
+ * Body: { projectId }
+ */
+exports.cancelTask = async (req, res) => {
+  const { projectId } = req.body;
+
+  if (!projectId) {
+    return res.status(400).json({ error: "projectId is required" });
+  }
+
+  try {
+    const project = await Project.findOneAndUpdate(
+      { projectId },
+      { cancelRequested: true, status: "Cancelled" },
+      { new: true }
+    );
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    return res.json({ status: "Cancelled", message: "Project marked as cancelled" });
+  } catch (err) {
+    console.error("Cancel task failed:", err);
+    return res.status(500).json({ error: "Failed to cancel task", details: err.message });
+  }
+};
