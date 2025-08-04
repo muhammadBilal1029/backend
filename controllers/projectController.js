@@ -4,6 +4,7 @@ const { addTaskToQueue } = require("../services/queueService");
 exports.createProject = async (req, res) => {
   try {
     const { vendorId,projectId, projectName, city, businessCategory } = req.body;
+    console.log(req.body);
     const project = new Project({
       vendorId,
       projectId,
@@ -13,6 +14,7 @@ exports.createProject = async (req, res) => {
     });
     // Add the project to the scraping queue
     await project.save();
+    console.log("Projects saved",project.vendorId);
     addTaskToQueue(project);
 
     res.status(201).json({ message: "Project created successfully", project });
