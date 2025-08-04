@@ -2,8 +2,9 @@ const jwt = require("jsonwebtoken");
 
 const generateToken = async (user) => {
   try {
+    const expiresIn = 1; 
     const token = jwt.sign({ id: user._id }, process.env.SECRET_KEY, {
-      expiresIn: "1d",
+      expiresIn: `${expiresIn}d`,
     });
     user.tokens = user.tokens || [];
     user.tokens.push({ token });

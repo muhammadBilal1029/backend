@@ -8,6 +8,7 @@ const userRouter = require("./routes/admin/users/users");
 const LeadRouter = require("./routes/Leads");
 const connectDB = require("./config/db");
 const { initQueue } = require("./services/queueService");
+const verifyToken = require("./middleware/verifyToken");
 const cors = require("cors");
 
 const app = express();
