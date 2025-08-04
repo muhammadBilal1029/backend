@@ -17,7 +17,9 @@ const verifyToken = async (req, res, next) => {
     const user =
       (await Admin.findById(decoded.id)) || (await Vendor.findById(decoded.id));
     if (!user) {
+      console.log("Unauthorized User",user)
       return res.status(404).json({ msg: "Unauthorized User" });
+      
     }
     req.user = user;
   
