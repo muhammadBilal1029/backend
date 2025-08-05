@@ -52,7 +52,7 @@ async function searchGoogleMaps(project) {
     const { city, businessCategory, vendorId } = project;
 
     const browser = await puppeteerExtra.launch({
-      headless: false,
+      headless: true,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",

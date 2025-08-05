@@ -31,6 +31,27 @@ exports.getProjects = async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 };
+
+exports.getProjectsByCategory = async (req, res) => {
+    try {
+    const { businessCategory } = req.params;
+
+    if (!businessCategory) {
+      return res.status(400).json({ msg: "Category is required" });
+    }
+
+    const projects = await Lead.find({ businessCategory: category });
+
+    if (!projects || projects.length === 0) {
+      return res.status(404).json({ msg: `No leads found for ${category}` });
+    }
+
+    return res.status(200).json(projects);
+  } catch (error) {
+    console.error("Error fetching projects by category:", error.message);
+    return res.status(500).json({ msg: "Server error while fetching projects" });
+  }
+}
 //! delete project
 exports.deleteProject = async (req, res) => {
   try {

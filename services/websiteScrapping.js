@@ -61,7 +61,7 @@ async function scrapeData(url) {
 
   // Launch Puppeteer with fallback for hosted environments
   const browser = await puppeteerExtra.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
