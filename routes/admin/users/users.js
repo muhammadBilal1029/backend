@@ -12,6 +12,12 @@ router.post("/admin-register", async (req, res) => {
   const { email, otp } = req.body;
 
   try {
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        msg: "Invalid email domain. Only .edu, .org, .com or gmail.com allowed.",
+      });
+    }
     const admin = await Admin.findOne({ email });
 
     if (!admin || !admin.otp) {
