@@ -5,47 +5,93 @@ const Vendor = require("../../../models/customerData/customerData");
 const verifyToken = require("../../../middleware/verifyToken");
 const generateToken = require("../../../authentication/generateToken");
 const bcryptjs = require("bcryptjs");
+const sendOtpEmail = require("../../../authentication/sendOtpEmail");
 
 // Register Admin
 router.post("/admin-register", async (req, res) => {
-  const { username, email, password, confirmPassword } = req.body;
+  const { email, otp } = req.body;
 
   try {
-    const adminExist = await Admin.findOne({ email });
-    if (adminExist) {
+    const admin = await Admin.findOne({ email });
+
+    if (!admin || !admin.otp) {
+      return res.status(400).json({ msg: "No pending registration for this email" });
+    }
+
+    if (admin.otp !== otp || admin.otpExpires < Date.now()) {
+      return res.status(400).json({ msg: "Invalid or expired OTP" });
+    }
+
+    // ✅ Finalize registration
+    admin.otp = null;
+    admin.otpExpires = null;
+    await admin.save();
+
+    const token = await generateToken(admin);
+    return res.status(200).json({
+      msg: "Admin registered successfully",
+      user: {
+        id: admin._id,
+        username: admin.username,
+        email: admin.email,
+      },
+      token,
+    });
+  } catch (error) {
+    console.error("Error in /admin-register:", error);
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+});
+
+router.post("/send-otp", async (req, res) => {
+  const { username, email, password, phone } = req.body;
+
+  try {
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        msg: "Invalid email domain. Only .edu, .org, .com or gmail.com allowed.",
+      });
+    }
+
+    let admin = await Admin.findOne({ email });
+   
+    // If admin exists and already verified
+    if (admin && !admin.otp) {
       return res.status(400).json({ msg: "Email already registered" });
     }
 
-    if (password !== confirmPassword) {
-      return res.status(400).json({ msg: "Passwords do not match" });
+    // If admin exists and still pending OTP
+    if (admin && admin.otp) {
+      await sendOtpEmail(admin.email, admin.otp);
+      return res.status(200).json({ msg: "OTP already sent. Please check your email." });
     }
 
-    // Hash the password
+    // Generate OTP and save temp user
+    const generatedOtp = generateOtp();
     const hashedPassword = await bcryptjs.hash(password, 10);
 
     const newAdmin = new Admin({
       username,
       email,
       password: hashedPassword,
+      phone,
+      otp: generatedOtp,
+      otpExpires: Date.now() + 5 * 60 * 1000, // 5 minutes
     });
 
-    const token = await generateToken(newAdmin);
+    await sendOtpEmail(email, generatedOtp);
     await newAdmin.save();
-
-    return res.status(200).json({
-      msg: "Admin Registered Successfully",
-      user: {
-        id: newAdmin._id,
-        username: newAdmin.username,
-        email: newAdmin.email,
-      },
-      token,
-    });
+   const token=await generateToken(newAdmin);
+   
+    return res.status(200).json({ msg: "OTP sent to email" ,token,user: {
+    username: newAdmin.username,
+    email: newAdmin.email,
+  }});
   } catch (error) {
-    return res.status(500).json({ msg: "Internal Server Error", error });
+    console.error("Error in /send-otp:", error);
+    return res.status(500).json({ msg: "Internal Server Error" });
   }
 });
-
 // Register Business
 router.post("/vendor-register", async (req, res) => {
   const {
@@ -210,5 +256,16 @@ router.put("/updateUserProfile/:email", verifyToken, async (req, res) => {
     return res.status(500).json({ msg: "Internal Server Error" });
   }
 });
+
+const generateOtp = () => {
+  const Otp = Math.floor(100000 + Math.random() * 900000).toString();
+  return Otp;
+};
+
+function isValidEmail(email) {
+  const regex =
+    /^[a-zA-Z0-9._%+-]+@(?:gmail\.com|[a-zA-Z0-9.-]+\.(edu|org|com))$/;
+  return regex.test(email);
+}
 
 module.exports = router;
