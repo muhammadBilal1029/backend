@@ -37,6 +37,9 @@ app.use("/scraping", scrapingRoutes);
 // Background tasks
 // jobScraping();
 
+app.get("/",(req,res)=>{
+  res.send("Server running");
+})
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
