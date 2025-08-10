@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Job = require("../models/jobs");
 const puppeteer = require("puppeteer");
-const pLimit = require("p-limit");
+const pLimit = require("p-limit").default;
 const limit = pLimit(3); // max 3 concurrent browsers
 
 // ================= Helper Functions =================
