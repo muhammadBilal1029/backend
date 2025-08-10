@@ -1,8 +1,9 @@
 const mongoose = require("mongoose");
 const News = require("../models/news");
 const puppeteer = require("puppeteer");
-const pLimit = require("p-limit").default; // ✅ Required for p-limit v5+
-const limit = pLimit(3); // Max 3 concurrent browsers
+const pLimitImport = require("p-limit");
+const pLimit = pLimitImport.default || pLimitImport;
+const limit = pLimit(3);
 
 // ================= Helper Functions =================
 async function waitRandom(page, min = 1500, max = 3000) {

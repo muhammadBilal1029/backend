@@ -1,8 +1,9 @@
 const mongoose = require("mongoose");
 const Job = require("../models/jobs");
 const puppeteer = require("puppeteer");
-const pLimit = require("p-limit").default;
-const limit = pLimit(3); // max 3 concurrent browsers
+const pLimitImport = require("p-limit");
+const pLimit = pLimitImport.default || pLimitImport;
+const limit = pLimit(3);
 
 // ================= Helper Functions =================
 async function waitRandom(page, min = 2000, max = 4000) {

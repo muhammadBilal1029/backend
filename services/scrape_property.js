@@ -1,8 +1,9 @@
 const mongoose = require("mongoose");
 const Property = require("../models/property"); // Adjust path as needed
 const puppeteer = require("puppeteer");
-const pLimit = require("p-limit").default;
-const limit = pLimit(3); // Max 3 concurrent browsers
+const pLimitImport = require("p-limit");
+const pLimit = pLimitImport.default || pLimitImport;
+const limit = pLimit(3);
 const { URL } = require("url"); // Node built-in
 
 // ================= Helper Functions =================
