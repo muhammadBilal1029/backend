@@ -3,7 +3,7 @@ const puppeteerExtra = require("puppeteer-extra");
 const stealthPlugin = require("puppeteer-extra-plugin-stealth");
 const Lead = require("../models/Lead");
 const { scrapeData } = require("./websiteScrapping");
-const pLimit = require("p-limit").default;
+const pLimit = require("p-limit");
 
 puppeteerExtra.use(stealthPlugin());
 
