@@ -16,7 +16,7 @@ const leadSchema = new mongoose.Schema({
   vendorId: String,
   about: String,
   logoUrl: String,
-  email: String,
+  email: { type: String, index: true },// Indexed for faster lookup
   imageUrl: String,
   socialLinks: {
     youtube: String,
@@ -26,6 +26,8 @@ const leadSchema = new mongoose.Schema({
   },
 });
 
+// Prevent duplicates based on email + vendorId
+// leadSchema.index({ email: 1 }, { unique: true });
 const Lead = mongoose.model("Lead", leadSchema);
 
 module.exports = Lead;

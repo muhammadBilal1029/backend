@@ -13,7 +13,7 @@ const projectQueue = new Bull("projectQueue", {
   },
 });
 
-async function initQueue(mongoose) {
+async function initQueue(mongoose, io) {
   console.log("initQueue function called");
 
   return new Promise((resolve, reject) => {
@@ -29,7 +29,7 @@ async function initQueue(mongoose) {
         await Project.findByIdAndUpdate(project._id, { status: "Running" });
         job.progress(10);
 
-        const data = await searchGoogleMaps(project); // No io passed now
+        const data = await searchGoogleMaps(project, io);
         console.log("Google Maps data scraped:", data?.length);
         job.progress(100);
 
