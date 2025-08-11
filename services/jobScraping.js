@@ -297,7 +297,16 @@ async function scrapeJobs(site) {
   await page.close();
   await browser.close();
 }
-
+const getJobs = async (req, res) => {
+  try {
+    const jobs = await Job.find().sort({ scrapedAt: -1 }); // newest first
+    console.log("getjobs",jobs);
+    res.status(200).json(jobs);
+  } catch (error) {
+    console.error("Error fetching jobs:", error);
+    res.status(500).json({ error: "Failed to fetch jobs" });
+  }
+};
 // ================= Runner =================
 const scrapeAllJobs = async (req, res) => {
   try {
@@ -311,4 +320,4 @@ const scrapeAllJobs = async (req, res) => {
     res.status(500).json({ error: "Scraping failed" });
   }
 };
-module.exports = scrapeAllJobs;
+module.exports = {scrapeAllJobs,getJobs};
