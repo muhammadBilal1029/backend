@@ -3,48 +3,6 @@ const axios = require("axios");
 const puppeteerExtra = require("puppeteer-extra");
 const stealthPlugin = require("puppeteer-extra-plugin-stealth");
 
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-
-// Helper function to get browser path
-// function getLocalBrowserPath() {
-//   const paths = {
-//     win32: [
-//       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-//       "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-//       "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
-//       "C:\\Program Files\\Opera\\launcher.exe",
-//     ],
-//     darwin: [
-//       // macOS paths
-//       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-//       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-//       "/Applications/Firefox.app/Contents/MacOS/firefox",
-//       "/Applications/Opera.app/Contents/MacOS/Opera",
-//     ],
-//     linux: [
-//       // Linux paths
-//       "/usr/bin/google-chrome",
-//       "/usr/bin/microsoft-edge",
-//       "/usr/bin/firefox",
-//       "/usr/bin/opera",
-//     ],
-//   };
-
-//   const platform = process.platform;
-//   const browserPaths = paths[platform] || [];
-
-//   // Return the first existing browser path
-//   for (const browserPath of browserPaths) {
-//     if (fs.existsSync(browserPath)) {
-//       return browserPath;
-//     }
-//   }
-
-//   throw new Error("No supported browser found on this system.");
-// }
-
 async function isWebsiteAvailable(url) {
   try {
     const response = await axios.get(url, { timeout: 10000 });
@@ -61,7 +19,7 @@ async function scrapeData(url) {
 
   // Launch Puppeteer with fallback for hosted environments
   const browser = await puppeteerExtra.launch({
-    headless: true,
+    headless: "new",
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -69,6 +27,7 @@ async function scrapeData(url) {
       "--disable-gpu",
     ],
   });
+
   let about = "";
   let logoUrl = "";
   let email = "";
@@ -102,7 +61,8 @@ async function scrapeData(url) {
       email = await getEmail(page);
       socialLinks = await getSocialLinks(page);
     }
-
+    console.log("email before", email);
+    console.log("socialLinks before", socialLinks);
     // Scroll the page to load dynamic content
     await scrollPage(page);
     if (!email || Object.values(socialLinks).some((link) => link === "")) {
@@ -112,7 +72,8 @@ async function scrapeData(url) {
         socialLinks = await getSocialLinks(page);
       }
     }
-
+    console.log("email after", email);
+    console.log("socialLinks after", socialLinks);
     // Check the Contact Us page, skip scraping if not available
     const contactUsUrl = constructContactUrl(url);
     console.log("Checking Contact Us page:", contactUsUrl);
@@ -122,8 +83,14 @@ async function scrapeData(url) {
       // Scroll the page to load dynamic content
       await scrollPage(page);
       await safeNavigate(page, contactUsUrl, 90000);
-      email = await getEmail(page);
-      socialLinks = await getSocialLinks(page);
+      if (!email) {
+        email = await getEmail(page);
+      }
+      if (Object.values(socialLinks).some((link) => link === "")) {
+        socialLinks = await getSocialLinks(page);
+      }
+      console.log("email after contact", email);
+      console.log("socialLinks after contact", socialLinks);
     }
 
     // Check the About Us page, skip scraping if not available
@@ -135,10 +102,18 @@ async function scrapeData(url) {
       // Scroll the page to load dynamic content
       await scrollPage(page);
       await safeNavigate(page, aboutUsUrl, 90000);
-      email = await getEmail(page);
+      if (!email) {
+        email = await getEmail(page);
+      }
+      if (Object.values(socialLinks).some((link) => link === "")) {
+        socialLinks = await getSocialLinks(page);
+      }
       about = await getAbout(page);
-      socialLinks = await getSocialLinks(page);
+      console.log("email after about", email);
+      console.log("socialLinks after about", socialLinks);
     }
+    console.log("email final", email);
+    console.log("socialLinks final", socialLinks);
   } catch (error) {
     console.error("Error during scraping:", error);
   } finally {
@@ -193,22 +168,47 @@ async function getLogoUrl(header) {
 async function getEmail(page) {
   try {
     return await page.evaluate(() => {
-      // Try to match an email in the text content of the page
+      const emailsFound = new Set();
       const textContent = document.body.innerText;
-      const emailMatch = textContent.match(
-        /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4})/
+
+      // 1. Standard email regex
+      const standardEmails = textContent.match(
+        /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
       );
+      if (standardEmails) standardEmails.forEach((e) => emailsFound.add(e));
 
-      // If no email found in text, check for mailto: links
-      if (!emailMatch) {
-        const mailtoLink = document.querySelector("a[href^='mailto:']");
-        return mailtoLink
-          ? mailtoLink.getAttribute("href").replace("mailto:", "")
-          : "";
-      }
+      // 2. mailto: links
+      document.querySelectorAll("a[href^='mailto:']").forEach((a) => {
+        const email = a
+          .getAttribute("href")
+          .replace("mailto:", "")
+          .split("?")[0];
+        emailsFound.add(email);
+      });
 
-      // If email is found, return it
-      return emailMatch ? emailMatch[0] : "";
+      // 3. Obfuscated forms
+      const obfuscatedPatterns = [
+        /\b([a-zA-Z0-9._%+-]+)\s?\[at\]\s?([a-zA-Z0-9.-]+)\s?\[dot\]\s?([a-zA-Z]{2,})\b/gi,
+        /\b([a-zA-Z0-9._%+-]+)\s?\(at\)\s?([a-zA-Z0-9.-]+)\s?\(dot\)\s?([a-zA-Z]{2,})\b/gi,
+      ];
+      obfuscatedPatterns.forEach((regex) => {
+        let match;
+        while ((match = regex.exec(textContent)) !== null) {
+          emailsFound.add(`${match[1]}@${match[2]}.${match[3]}`);
+        }
+      });
+
+      // 4. HTML entity-encoded emails
+      const decodedHTML = document.documentElement.innerHTML.replace(
+        /&#(\d+);/g,
+        (_, code) => String.fromCharCode(code)
+      );
+      const htmlEmails = decodedHTML.match(
+        /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
+      );
+      if (htmlEmails) htmlEmails.forEach((e) => emailsFound.add(e));
+      console.log("All emails found.......>", emailsFound);
+      return Array.from(emailsFound)[0];
     });
   } catch (error) {
     console.error("Error getting email:", error);
@@ -220,11 +220,44 @@ async function getEmail(page) {
 async function getAbout(page) {
   try {
     return await page.evaluate(() => {
-      const aboutElement =
-        document.querySelector(
-          'div[class*="about"], section[class*="about"], p'
-        ) || null;
-      return aboutElement ? aboutElement.innerText.trim() : "";
+      const aboutTexts = [];
+
+      // 1. Check obvious "about" sections by class or id
+      document
+        .querySelectorAll('[class*="about"], [id*="about"]')
+        .forEach((el) => {
+          if (el.innerText.trim().length > 30)
+            aboutTexts.push(el.innerText.trim());
+        });
+
+      // 2. Look for headings that contain "About" or similar
+      const headingKeywords = ["about", "who we are", "our story", "company"];
+      document.querySelectorAll("h1, h2, h3, h4, h5").forEach((h) => {
+        const text = h.innerText.toLowerCase();
+        if (headingKeywords.some((k) => text.includes(k))) {
+          let sectionText = h.parentElement.innerText.trim();
+          if (sectionText.length > 30) aboutTexts.push(sectionText);
+        }
+      });
+
+      // 3. Search in meta description if no visible section
+      if (aboutTexts.length === 0) {
+        const metaDesc = document.querySelector('meta[name="description"]');
+        if (metaDesc?.content) aboutTexts.push(metaDesc.content.trim());
+      }
+
+      // 4. Search in JSON-LD structured data
+      document
+        .querySelectorAll('script[type="application/ld+json"]')
+        .forEach((script) => {
+          try {
+            const data = JSON.parse(script.innerText);
+            if (data.description) aboutTexts.push(data.description.trim());
+          } catch {}
+        });
+      console.log("all about texts.........>", aboutTexts);
+      // 5. Deduplicate and return
+      return Array.from(new Set(aboutTexts))[0];
     });
   } catch {
     return "";
@@ -233,35 +266,65 @@ async function getAbout(page) {
 
 async function getSocialLinks(page) {
   try {
-    const socialSelectors = [
-      "a[href*='facebook.com']",
-      "a[href*='instagram.com']",
-      "a[href*='linkedin.com']",
-      "a[href*='youtube.com']",
-    ];
-    const links = await page.$$eval(socialSelectors.join(","), (anchors) =>
-      anchors.map((a) => a.href).filter((href) => href)
-    );
-
-    // Initialize the socialLinks object with empty strings
-    let socialLinks = {
-      youtube: "",
-      instagram: "",
-      facebook: "",
-      linkedin: "",
+    const socialPatterns = {
+      facebook: ["facebook.com", "fb.com", "m.facebook.com", "fb.me"],
+      instagram: ["instagram.com", "instagr.am"],
+      linkedin: ["linkedin.com", "linkedin.cn"],
+      youtube: ["youtube.com", "youtu.be"],
+      // twitter: ["twitter.com", "x.com"],
+      // pinterest: ["pinterest.com", "pin.it"],
+      // tiktok: ["tiktok.com"],
     };
 
-    // Map found links to their respective social platforms
-    links.forEach((link) => {
-      if (link.includes("facebook.com")) socialLinks.facebook = link;
-      if (link.includes("instagram.com")) socialLinks.instagram = link;
-      if (link.includes("linkedin.com")) socialLinks.linkedin = link;
-      if (link.includes("youtube.com")) socialLinks.youtube = link;
-    });
+    // Selector for all anchors
+    const allLinks = await page.$$eval("a[href]", (anchors) =>
+      anchors.map((a) => a.href.trim()).filter(Boolean)
+    );
 
+    // Try to also extract from meta and JSON-LD if links missing
+    const metaLinks = await page.$$eval(
+      'meta[property*="og:"], meta[name*="twitter:"], script[type="application/ld+json"]',
+      (metas) => metas.map((m) => m.content || m.innerText).filter(Boolean)
+    );
+
+    const combinedLinks = [...new Set([...allLinks, ...metaLinks])];
+
+    // Prepare result
+    let socialLinks = {
+      facebook: "",
+      instagram: "",
+      linkedin: "",
+      youtube: "",
+      // twitter: "",
+      // pinterest: "",
+      // tiktok: ""
+    };
+
+    // Match each platform
+    for (const link of combinedLinks) {
+      for (const [platform, patterns] of Object.entries(socialPatterns)) {
+        if (
+          !socialLinks[platform] &&
+          patterns.some((pattern) => link.toLowerCase().includes(pattern))
+        ) {
+          socialLinks[platform] = link;
+        }
+      }
+    }
+
+    console.log("All social links.........>", socialLinks);
     return socialLinks;
-  } catch {
-    return { youtube: "", instagram: "", facebook: "", linkedin: "" };
+  } catch (err) {
+    console.error("Error getting social links:", err);
+    return {
+      facebook: "",
+      instagram: "",
+      linkedin: "",
+      youtube: "",
+      // twitter: "",
+      // pinterest: "",
+      // tiktok: ""
+    };
   }
 }
 
